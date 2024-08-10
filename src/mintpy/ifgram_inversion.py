@@ -1027,7 +1027,7 @@ def run_ifgram_inversion(inps):
     meta['REF_DATE'] = date_list[0]
 
     # 2.2 instantiate time-series
-    dates = np.array(date_list, dtype=np.string_)
+    dates = np.array(date_list, dtype=np.bytes_)
     pbase = stack_obj.get_perp_baseline_timeseries(dropIfgram=True)
     ds_name_dict = {
         "date"       : [dates.dtype, (num_date,), dates],
@@ -1060,6 +1060,11 @@ def run_ifgram_inversion(inps):
     # 2.4 instantiate number of inverted observations
     meta['FILE_TYPE'] = 'mask'
     meta['UNIT'] = '1'
+    # ignore NO_DATA_VALUE from ifgram stack file here as 1) it makes sense
+    # and 2) to avoid the weird error at https://github.com/insarlab/MintPy/issues/1185
+    if 'NO_DATA_VALUE' in meta.keys():
+        meta.pop('NO_DATA_VALUE')
+
     ds_name_dict = {"mask" : [np.float32, (length, width)]}
     writefile.layout_hdf5(inps.numInvFile, ds_name_dict, metadata=meta)
 

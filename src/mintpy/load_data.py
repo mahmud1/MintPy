@@ -382,7 +382,7 @@ def read_inps_dict2ifgram_stack_dict_object(iDict, ds_name2template_key):
     pairsDict = {}
     for i, dsPath0 in enumerate(dsPathDict[dsName0]):
         # date string used in the file/dir path
-        # YYYYDDD       for gmtsar [modern Julian date]
+        # YYYYDDD       for gmtsar [day of the year - 1]
         # YYYYMMDDTHHMM for uavsar
         # YYYYMMDD      for all the others
         date6s = readfile.read_attribute(dsPath0)['DATE12'].replace('_','-').split('-')
@@ -623,8 +623,12 @@ def prepare_metadata(iDict):
             if len(glob.glob(str(iDict[key]))) > 0:
                 # print command line
                 iargs = [iDict[key]]
-                if processor == 'gamma' and iDict['PLATFORM']:
-                    iargs += ['--sensor', iDict['PLATFORM'].lower()]
+                if processor == 'gamma':
+                    if iDict['PLATFORM']:
+                        iargs += ['--sensor', iDict['PLATFORM'].lower()]
+                    # add DEM file to faciliate the checking and metadata extraction for geocoded datasets
+                    iargs += ['--dem', iDict['mintpy.load.demFile']]
+
                 elif processor == 'cosicorr':
                     iargs += ['--metadata', iDict['mintpy.load.metaFile']]
                 ut.print_command_line(script_name, iargs)
@@ -634,9 +638,13 @@ def prepare_metadata(iDict):
     elif processor == 'nisar':
         dem_file = iDict['mintpy.load.demFile']
         gunw_files = iDict['mintpy.load.unwFile']
+        water_mask = iDict['mintpy.load.waterMaskFile']
 
         # run prep_*.py
-        iargs = ['-i', gunw_files, '-d', dem_file, '-o', '../mintpy']
+        iargs = ['-i', gunw_files, '-d', dem_file]
+
+        if os.path.exists(water_mask):
+            iargs = iargs + ['--mask', water_mask]
 
         if iDict['mintpy.subset.yx']:
             warnings.warn('Subset in Y/X is not implemented for NISAR. \n'
@@ -752,10 +760,7 @@ def prepare_metadata(iDict):
 
         ## run
         ut.print_command_line(script_name, iargs)
-        try:
-            prep_module.main(iargs)
-        except:
-            warnings.warn('prep_aria.py failed. Assuming its result exists and continue...')
+        prep_module.main(iargs)
 
     elif processor == 'gmtsar':
         # use the custom template file if exists & input

@@ -61,6 +61,9 @@ def get_date_str_format(date_str):
     elif len(re.findall(r'\d{4}-\d{2}-\d{2}', date_str)) > 0:
         date_str_format = '%Y-%m-%d'
 
+    elif len(re.findall(r'\d{8}:\d{6}', date_str)) > 0:
+        date_str_format = '%Y%m%d:%H%M%S'
+
     elif len(re.findall(r'\d{8}T\d{6}', date_str)) > 0:
         date_str_format = '%Y%m%dT%H%M%S'
 
@@ -231,6 +234,29 @@ def yymmdd2yyyymmdd(date):
     else:
         date = '20'+date
     return date
+
+
+def yyyyddd2yyyymmdd(date_in):
+    """Convert GMTSAR folder name in YYYYDDD into YYYYMMDD.
+    Parameters: date_in  - str/list, GMTSAR date format in YYYYDDD, where DDD is the day of year - 1
+    Returns:    date_out - str/list, date in YYYYMMDD format
+    """
+    if isinstance(date_in, str):
+        year, doy = date_in[:4], date_in[-3:]
+        dt_obj = dt.datetime(int(year), 1, 1) + dt.timedelta(days=int(doy))
+        date_out = dt_obj.strftime('%Y%m%d')
+
+    elif isinstance(date_in, list):
+        date_out = []
+        for date_str in date_in:
+            year, doy = date_str[:4], date_str[-3:]
+            dt_obj = dt.datetime(int(year), 1, 1) + dt.timedelta(days=int(doy))
+            date_out.append(dt_obj.strftime('%Y%m%d'))
+
+    else:
+        return None
+
+    return date_out
 
 
 def yy2yyyy(year):
