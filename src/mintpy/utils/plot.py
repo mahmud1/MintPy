@@ -388,9 +388,23 @@ def auto_colormap_name(metadata, cmap_name=None, datasetName=None, print_msg=Tru
 
 
 def auto_adjust_colormap_lut_and_disp_limit(data, num_multilook=1, max_discrete_num_step=20, print_msg=True):
+    """Auto adjust the colormap lookup table and display limit for the given 2D/3D matrix.
+
+    Parameters: data                  - 2D/3D np.ndarray, data to be dispalyed
+                num_multilook         - int, number of looks applied to avoid occansional large values
+                max_discrete_num_step - int, maximum number of color steps allowed for discrete colormaps
+    Returns:    cmap_lut              - int, number of colors in the colormap lookup table
+                vlim                  - list(float), min/max value for display
+                unique_values         - np.ndarray, unique values of the given data
+    """
+    # prevent empty input data
+    finite_values = np.ma.masked_invalid(data).compressed()
+    if finite_values.size == 0:
+        warnings.warn('NO pixel with finite value found!')
+        return 256, [0.0, 0.0], None
 
     # max step size / min step number for a uniform colormap
-    unique_values = np.unique(data[~np.isnan(data) * np.isfinite(data)])
+    unique_values = np.unique(finite_values)
     min_val = np.min(unique_values).astype(float)
     max_val = np.max(unique_values).astype(float)
 
@@ -891,11 +905,11 @@ def plot_coherence_matrix(ax, date12List, cohList, date12List_drop=[], p_dict={}
     date12List = ptime.yyyymmdd_date12(date12List)
     coh_mat = pnet.coherence_matrix(date12List, cohList)
 
+    # Date Convert (also used by status bar below)
+    m_dates = [i.split('_')[0] for i in date12List]
+    s_dates = [i.split('_')[1] for i in date12List]
+    dateList = sorted(list(set(m_dates + s_dates)))
     if date12List_drop:
-        # Date Convert
-        m_dates = [i.split('_')[0] for i in date12List]
-        s_dates = [i.split('_')[1] for i in date12List]
-        dateList = sorted(list(set(m_dates + s_dates)))
         # Set dropped pairs' value to nan, in upper triangle only.
         for date12 in date12List_drop:
             idx1, idx2 = (dateList.index(i) for i in date12.split('_'))
@@ -933,7 +947,7 @@ def plot_coherence_matrix(ax, date12List, cohList, date12List_drop=[], p_dict={}
     if p_dict['disp_cbar']:
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", "3%", pad="3%")
-        cbar = plt.colorbar(im, cax=cax)
+        cbar = ax.figure.colorbar(im, cax=cax)
         cbar.set_label(p_dict['cbar_label'], fontsize=p_dict['fontsize'])
 
     # Legend
@@ -942,7 +956,164 @@ def plot_coherence_matrix(ax, date12List, cohList, date12List_drop=[], p_dict={}
         ax.plot([], [], label='Lower: Ifgrams all')
         ax.legend(loc=p_dict['legend_loc'], handlelength=0)
 
+    # Status bar
+    def format_coord(x, y):
+        row, col = int(y + 0.5), int(x + 0.5)
+        if 0 <= row < len(dateList) and 0 <= col < len(dateList):
+            date12 = sorted([dateList[row], dateList[col]])
+            date12 = [f'{i[0:4]}-{i[4:6]}-{i[6:8]}' for i in date12]
+            return f'x={date12[0]}, y={date12[1]}, v={coh_mat[row, col]:.3f}'
+        return ''
+
+    ax.format_coord = format_coord
+
     return ax, coh_mat, im
+
+
+def plot_coherence_matrix_time_axis(ax, date12List, cohList, date12List_drop=[], p_dict={}):
+    """Plot Coherence Matrix with continuous time axis
+    Parameters: ax : matplotlib.pyplot.Axes,
+                date12List : list of date12 in YYYYMMDD_YYYYMMDD format
+                cohList    : list of float, coherence value
+                date12List_drop : list of date12 for date12 marked as dropped
+                p_dict  : dict of plot setting
+    Returns:    ax : matplotlib.pyplot.Axes
+                coh_mat : 2D np.array in size of [num_date, num_date]
+                mesh : matplotlib.collections.QuadMesh object
+    """
+    # Figure Setting
+    if 'ds_name'     not in p_dict.keys():   p_dict['ds_name']     = 'Coherence'
+    if 'fontsize'    not in p_dict.keys():   p_dict['fontsize']    = 12
+    if 'disp_title'  not in p_dict.keys():   p_dict['disp_title']  = True
+    if 'fig_title'   not in p_dict.keys():   p_dict['fig_title']   = '{} Matrix'.format(p_dict['ds_name'])
+    if 'colormap'    not in p_dict.keys():   p_dict['colormap']    = 'RdBu_truncate'
+    if 'cbar_label'  not in p_dict.keys():   p_dict['cbar_label']  = p_dict['ds_name']
+    if 'vlim'        not in p_dict.keys():   p_dict['vlim']        = (0.2, 1.0)
+    if 'disp_cbar'   not in p_dict.keys():   p_dict['disp_cbar']   = True
+    if 'legend_loc'  not in p_dict.keys():   p_dict['legend_loc']  = 'best'
+    if 'disp_legend' not in p_dict.keys():   p_dict['disp_legend'] = True
+
+    # support input colormap: string for colormap name, or colormap object directly
+    if isinstance(p_dict['colormap'], str):
+        cmap = ColormapExt(p_dict['colormap']).colormap
+    elif isinstance(p_dict['colormap'], mpl.colors.LinearSegmentedColormap):
+        cmap = p_dict['colormap']
+    else:
+        raise ValueError('unrecognized colormap input: {}'.format(p_dict['colormap']))
+
+    date12List = ptime.yyyymmdd_date12(date12List)
+    coh_mat = pnet.coherence_matrix(date12List, cohList)
+
+    m_dates = [i.split('_')[0] for i in date12List]
+    s_dates = [i.split('_')[1] for i in date12List]
+    dateList = ptime.yyyymmdd(sorted(list(set(m_dates + s_dates))))
+    dates = [dt.datetime.strptime(i, '%Y%m%d') for i in dateList]
+
+    if date12List_drop:
+        date12List_drop = ptime.yyyymmdd_date12(date12List_drop)
+        for date12 in date12List_drop:
+            idx1, idx2 = (dateList.index(i) for i in date12.split('_'))
+            coh_mat[idx1, idx2] = np.nan
+
+    # Plotting strategy for the time-axis coherence matrix:
+    # 1) Build a date-centered grid: each acquisition sits at the midpoint between
+    #    neighboring cell edges; the first/last edges extend outward by half of the
+    #    adjacent interval so edge cells match the in-network cell width.
+    # 2) Convert grid edges to matplotlib date numbers via mdates.date2num() because
+    #    pcolormesh() requires numeric vertex coordinates for datetime axes.
+    grid_points = [dates[0] - (dates[1] - dates[0]) / 2]
+    for date1, date2 in zip(dates[:-1], dates[1:]):
+        grid_points.append(date1 + (date2 - date1) / 2)
+    grid_points.append(dates[-1] + (dates[-1] - dates[-2]) / 2)
+
+    grid_nums = mdates.date2num(grid_points)
+    X, Y = np.meshgrid(grid_nums, grid_nums)
+
+    # Plot diagonal grids (gray/black, zorder=1): mark acquisition dates for visual reference, and
+    # to distinguish them from un-selected / dropped interferograms (off-diagonal NaNs).
+    diag_mat = np.diag(np.ones(coh_mat.shape[0]))
+    diag_mat[diag_mat == 0.] = np.nan
+    ax.pcolormesh(X, Y, diag_mat, cmap='gray_r', vmin=0.0, vmax=1.0, shading='auto', zorder=1)
+
+    # Plot off-diagonal grids (zorder=0): coherence of each ifgram pair; upper triangle may exclude
+    # dropped pairs (NaN -> white via set_bad) while lower triangle keeps the full network.
+    cmap.set_bad('white')
+    mesh = ax.pcolormesh(
+        X, Y, coh_mat,
+        cmap=cmap,
+        vmin=p_dict['vlim'][0],
+        vmax=p_dict['vlim'][1],
+        shading='auto',
+        zorder=0,
+    )
+
+    # axis format
+    # x-axis: reuse auto_adjust_xaxis_date() year labels
+    # y-axis: copy the same locators/formatters from the x-axis to be consistent
+    ax.set_aspect('equal', adjustable='box')
+    ax = auto_adjust_xaxis_date(ax, dates, buffer_year=None, fontsize=p_dict['fontsize'])[0]
+
+    # for short span (<=1.5 yr), use same-line labels — year at Jan, odd month num at others
+    span_years = (dates[-1] - dates[0]).days / 365.25
+    if span_years <= 1.5:
+        def _month_or_year(x, pos=None):
+            d = mdates.num2date(x).replace(tzinfo=None)
+            if d.month == 1:
+                return str(d.year)
+            return str(d.month)
+        for axis in [ax.xaxis, ax.yaxis]:
+            axis.set_major_locator(mdates.MonthLocator(bymonth=range(1, 13, 2)))
+            axis.set_major_formatter(ticker.FuncFormatter(_month_or_year))
+            axis.set_minor_locator(mdates.MonthLocator())
+    else:
+        # Sync y-axis tick locators/formatters with the x-axis (after auto_adjust)
+        ax.yaxis.set_major_locator(ax.xaxis.get_major_locator())
+        ax.yaxis.set_major_formatter(ax.xaxis.get_major_formatter())
+        ax.yaxis.set_minor_locator(ax.xaxis.get_minor_locator())
+
+    # Invert y-axis so early dates are at the top (same visual layout as the index matrix)
+    ax.set_ylim(ax.get_xlim()[::-1])
+    ax.set_xlabel('Time', fontsize=p_dict['fontsize'])
+    ax.set_ylabel('Time', fontsize=p_dict['fontsize'])
+    # Rotate y tick labels 90 deg for readable date/month labels along the left edge
+    for label in ax.get_yticklabels():
+        label.set_rotation(90)
+        label.set_va('center')
+    ax.tick_params(which='both', direction='out',
+                   bottom=True, top=True, left=True, right=True)
+
+    if p_dict['disp_title']:
+        ax.set_title(p_dict['fig_title'])
+
+    # Colorbar
+    if p_dict['disp_cbar']:
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", "3%", pad="3%")
+        cbar = ax.figure.colorbar(mesh, cax=cax)
+        cbar.set_label(p_dict['cbar_label'], fontsize=p_dict['fontsize'])
+
+    # Legend
+    if date12List_drop and p_dict['disp_legend']:
+        ax.plot([], [], label='Upper: Ifgrams used')
+        ax.plot([], [], label='Lower: Ifgrams all')
+        ax.legend(loc=p_dict['legend_loc'], handlelength=0)
+
+    # Status bar
+    def format_coord(x, y):
+        col = np.searchsorted(grid_nums, x, side='right') - 1
+        row = np.searchsorted(grid_nums, y, side='right') - 1
+        if 0 <= row < len(dates) and 0 <= col < len(dates):
+            date1 = dates[col].strftime('%Y-%m-%d')
+            date2 = dates[row].strftime('%Y-%m-%d')
+            coh_val = coh_mat[row, col]
+            if not np.isnan(coh_val):
+                return f'x={date1}, y={date2}, v={coh_val:.3f}'
+            return f'x={date1}, y={date2}, v=NaN'
+        return ''
+
+    ax.format_coord = format_coord
+
+    return ax, coh_mat, mesh
 
 
 def plot_num_triplet_with_nonzero_integer_ambiguity(fname, disp_fig=False, font_size=12, fig_size=[9,3]):
@@ -1146,10 +1317,11 @@ def plot_gnss(ax, SNWE, inps, metadata=dict(), print_msg=True):
         start_date=start_date,
         end_date=end_date,
         source=inps.gnss_source,
+        print_msg=print_msg,
     )
     if site_names.size == 0:
         warnings.warn(f'No GNSS found within {SNWE} during {start_date} - {end_date}!')
-        print('  continue without GNSS plots.')
+        vprint('  continue without GNSS plots.')
         return ax
 
     # print the nearest GNSS to the current reference point
@@ -1164,7 +1336,12 @@ def plot_gnss(ax, SNWE, inps, metadata=dict(), print_msg=True):
         n_ind = np.argmin(site_dist)
         msg = 'nearest GNSS site (potential --ref-gnss choice): '
         msg += f'{site_names[n_ind]} at [{site_lats[n_ind]}, {site_lons[n_ind]}]'
-        print(msg)
+        vprint(msg)
+
+    # print the GNSS solution reference frame
+    gnss_obj = gnss.get_gnss_class(inps.gnss_source)(site_names[0])
+    vprint(f'GNSS source: {gnss_obj.source}')
+    vprint(f'GNSS reference frame: {gnss_obj.version}')
 
     # post-query: convert lat/lon to UTM for plotting
     if 'UTM_ZONE' in metadata.keys():
@@ -1198,7 +1375,7 @@ def plot_gnss(ax, SNWE, inps, metadata=dict(), print_msg=True):
         vprint('-'*30)
         msg = 'plotting GNSS '
         msg += 'velocity' if k == 'velocity' else 'displacement'
-        msg += f' in IGS14 reference frame in {inps.gnss_component} direction'
+        msg += f' in {inps.gnss_component} direction'
         msg += f' with respect to {inps.ref_gnss_site} ...' if inps.ref_gnss_site else ' ...'
         vprint(msg)
         vprint(f'number of available GNSS stations: {len(site_names)}')
@@ -1340,7 +1517,9 @@ def plot_insar_vs_gnss_scatter(vel_file, csv_file='gnss_enu2los_UNR.csv', msk_fi
         x, y = xs[i], ys[i]
         if (0 <= x < width) and (0 <= y < length) and msk[y, x]:
             box = (x, y, x+1, y+1)
-            insar_obs[i] = readfile.read(vel_file, datasetName='velocity', box=box)[0] * unit_fac
+            val = readfile.read(vel_file, datasetName='velocity', box=box)[0]
+            insar_obs[i] = float(np.squeeze(val)) * unit_fac
+
         prog_bar.update(i+1, suffix=f'{i+1}/{num_site} {sites[i]}')
     prog_bar.close()
 
@@ -1512,47 +1691,150 @@ def plot_colorbar(inps, im, cax):
     return inps, cbar
 
 
-def plot_faultline(ax, faultline_file, SNWE, linewidth=0.5, min_dist=0.1, print_msg=True):
-    """Plot fault lines.
+def plot_shape(ax, shp_files, SNWE, color='k', linewidth=0.5, min_dist=0.1, print_msg=True):
+    """Plot shapes (line, polygon) in ESRI shapefile or GMT lonlat format.
 
-    Parameters: ax             - matplotlib.axes object
-                faultline_file - str, path to the fault line file in GMT lonlat format
-                SNWE           - tuple of 4 float, for south, north, west and east
-    Returns:    ax             - matplotlib.axes object
-                faults         - list of 2D np.ndarray in size of [num_point, 2] in float32
-                                 with each row for one point in [lon, lat] in degrees
+    Parameters: ax        - matplotlib.axes object
+                shp_files - list(str), path(s) to the shape file in ESRI or GMT format
+                SNWE      - tuple of 4 float, for south, north, west and east
+                color     - str, line color
+                linewidth - float, linewidth in points
+                min_dist  - float, minimum segment distance (for GMT format only)
+    Returns:    ax        - matplotlib.axes object
     """
+    num_file = len(shp_files)
+    kwargs = dict(color=color, linewidth=linewidth, print_msg=print_msg)
 
-    if print_msg:
-        print(f'plot fault lines from GMT lonlat file: {faultline_file}')
+    for i, shp_file in enumerate(shp_files):
+        if print_msg:
+            print(f'plotting shapes from {i+1}/{num_file} files: {shp_file}')
 
-    # read faults
-    faults = readfile.read_gmt_lonlat_file(
-        faultline_file,
-        SNWE=SNWE,
-        min_dist=min_dist,
-        print_msg=print_msg,
-    )
+        if shp_file.endswith('.shp'):
+            plot_shapefile(ax, shp_file, **kwargs)
 
-    if len(faults) == 0:
-        warnings.warn(f'No fault lines found within {SNWE} with length >= {min_dist} km!')
-        print('  continue without fault lines.')
-        return ax, faults
-
-    # plot
-    print_msg = False if len(faults) < 1000 else print_msg
-    prog_bar = ptime.progressBar(maxValue=len(faults), print_msg=print_msg)
-    for i, fault in enumerate(faults):
-        ax.plot(fault[:,0], fault[:,1], 'k-', lw=linewidth)
-        prog_bar.update(i+1, every=10)
-    prog_bar.close()
+        elif shp_file.endswith('.lonlat'):
+            plot_gmt_lonlat_file(ax, shp_file, SNWE, min_dist=min_dist, **kwargs)
 
     # keep the same axis limit
     S, N, W, E = SNWE
     ax.set_xlim(W, E)
     ax.set_ylim(S, N)
 
-    return ax, faults
+    return ax
+
+
+def plot_shapefile(ax, shp_file, color='k', linewidth=0.5, print_msg=True):
+    """Plot shapes (line or polygon) in ESRI shapefile format.
+
+    Parameters: ax        - matplotlib.axes object
+                shp_file  - str, path to the fault line file in GMT lonlat format
+                color     - str, line color
+                linewidth - float, linewidth in points
+    Returns:    ax       - matplotlib.axes object
+    """
+
+    from osgeo import ogr, osr
+
+    # read shapefile using GDAL
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    ds = driver.Open(shp_file, 0)
+    if ds is None:
+        raise RuntimeError(f"Could not open {shp_file} using GDAL/OGR!")
+    layer = ds.GetLayer()
+
+    # convert to lat/lon
+    source_srs = layer.GetSpatialRef()
+    if source_srs is None:
+        if print_msg:
+            print("⚠️ No CRS found in shapefile (.prj missing). Assuming WGS84.")
+        source_srs = osr.SpatialReference()
+        source_srs.ImportFromEPSG(4326)
+
+    target_srs = osr.SpatialReference()
+    target_srs.ImportFromEPSG(4326)   # WGS84 (lat/lon)
+    target_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)   # set to lon/lat order
+
+    transform = osr.CoordinateTransformation(source_srs, target_srs)
+
+    # plot: loop through each feature
+    kwargs = dict(color=color, linewidth=linewidth)
+    for feature in layer:
+        geom = feature.GetGeometryRef()
+        if not source_srs.IsGeographic():
+            if print_msg:
+                print("The shapefile is projected (e.g. UTM). Converting to lat/lon...")
+            geom.Transform(transform)  # convert to lat/lon
+        geom_type = geom.GetGeometryType()
+
+        def draw_polygon(polygon):
+            """Helper to draw single polygon."""
+            for i in range(polygon.GetGeometryCount()):
+                ring = polygon.GetGeometryRef(i)
+                x = [ring.GetX(j) for j in range(ring.GetPointCount())]
+                y = [ring.GetY(j) for j in range(ring.GetPointCount())]
+                ax.plot(x, y, **kwargs)
+
+        # handle different geometry types
+        if geom_type in (ogr.wkbPolygon, ogr.wkbPolygon25D):
+            draw_polygon(geom)
+
+        elif geom_type in (ogr.wkbMultiPolygon, ogr.wkbMultiPolygon25D):
+            for i in range(geom.GetGeometryCount()):
+                draw_polygon(geom.GetGeometryRef(i))
+
+        elif geom_type in (ogr.wkbLineString, ogr.wkbLineString25D):
+            x = [geom.GetX(i) for i in range(geom.GetPointCount())]
+            y = [geom.GetY(i) for i in range(geom.GetPointCount())]
+            ax.plot(x, y, **kwargs)
+
+        elif geom_type in (ogr.wkbMultiLineString, ogr.wkbMultiLineString25D):
+            for i in range(geom.GetGeometryCount()):
+                line = geom.GetGeometryRef(i)
+                x = [line.GetX(j) for j in range(line.GetPointCount())]
+                y = [line.GetY(j) for j in range(line.GetPointCount())]
+                ax.plot(x, y, **kwargs)
+
+        elif geom_type == ogr.wkbPoint:
+            ax.plot(geom.GetX(), geom.GetY(), "o", **kwargs)
+
+        else:
+            warnings.warn(f'Un-recognized geometry type: {geom_type}! Ignore and continue.')
+
+    return ax
+
+
+def plot_gmt_lonlat_file(ax, shp_file, SNWE, min_dist=0.1, color='k', linewidth=0.5, print_msg=True):
+    """Plot lines in GMT lonlat format.
+
+    Parameters: ax        - matplotlib.axes object
+                shp_file  - str, path to the fault line file in GMT lonlat format
+                SNWE      - tuple of 4 float, for south, north, west and east
+                min_dist  - float, minimum segment distance (for GMT format only)
+                color     - str, line color
+                linewidth - float, linewidth in points
+    Returns:    ax       - matplotlib.axes object
+    """
+    # read
+    faults = readfile.read_gmt_lonlat_file(
+        shp_file,
+        SNWE=SNWE,
+        min_dist=min_dist,
+        print_msg=print_msg,
+    )
+
+    if len(faults) == 0:
+        warnings.warn(f'No lines found within {SNWE} with length >= {min_dist} km! Skip plotting.')
+        return ax, faults
+
+    # plot
+    print_msg = False if len(faults) < 1000 else print_msg
+    prog_bar = ptime.progressBar(maxValue=len(faults), print_msg=print_msg)
+    for i, fault in enumerate(faults):
+        ax.plot(fault[:,0], fault[:,1], color=color, linewidth=linewidth)
+        prog_bar.update(i+1, every=10)
+    prog_bar.close()
+
+    return ax
 
 
 def add_arrow(line, position=None, direction='right', size=15, color=None):
@@ -1727,8 +2009,8 @@ def scale_data2disp_unit(data=None, metadata=dict(), disp_unit=None):
     if len(data_unit) == 2:
         try:
             if   disp_unit[1] in ['y','yr','year'  ]: disp_unit[1] = 'year'
-            elif disp_unit[1] in ['m','mon','month']: disp_unit[1] = 'mon'; scale *= 12.0
-            elif disp_unit[1] in ['d','day'        ]: disp_unit[1] = 'day'; scale *= 365.25
+            elif disp_unit[1] in ['m','mon','month']: disp_unit[1] = 'mon'; scale /= 12.0
+            elif disp_unit[1] in ['d','day'        ]: disp_unit[1] = 'day'; scale /= 365.25
             else: print('Unrecognized time unit for display:', disp_unit[1])
         except:
             disp_unit.append('year')
@@ -2037,7 +2319,7 @@ def plot_dem_background(ax, geo_box=None, dem_shade=None, dem_contour=None, dem_
                         dem=None, inps=None, print_msg=True):
     """Plot DEM as background.
     Parameters: ax   - matplotlib.pyplot.Axes or BasemapExt object
-                geo_box         - tuple of 4 float in order of (E, N, W, S), geo bounding box
+                geo_box         - tuple of 4 float in order of (W, N, E, S), geo bounding box
                 dem_shade       - 3D np.ndarray in size of (length, width, 4)
                 dem_contour     - 2D np.ndarray in size of (length, width)
                 dem_contour_seq - 1D np.ndarray

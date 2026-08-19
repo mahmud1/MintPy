@@ -310,8 +310,8 @@ def extract_alosStack_metadata(meta_file, geom_dir):
     meta['startingRange']   = track.startingRange + (rlooks-1.0)/2.0*track.rangePixelSize
     meta['passDirection']   = track.passDirection.upper()
     meta['polarization']    = track.frames[0].swaths[0].polarization
-    #meta['trackNumber']     = track.trackNumber
-    #meta['orbitNumber']     = track.orbitNumber
+    #meta['trackNumber']     = track.trackNumber     # not provided in SLC XML
+    #meta['orbitNumber']     = track.orbitNumber     # not provided in SLC XML
 
     meta['PLATFORM'] = sensor.standardize_sensor_name('alos2')
 
@@ -1275,6 +1275,8 @@ def unwrap_snaphu(int_file, cor_file, unw_file, max_defo=2.0, max_comp=32,
     atr['INTERLEAVE'] = 'BIL'
     atr['BANDS'] = '2'
     writefile.write_isce_xml(atr, unw_file)
+    if os.path.isfile(int_file+'.rsc'):
+        writefile.write_roipac_rsc(atr, unw_file+'.rsc', print_msg=True)
 
     if snp.dumpConnectedComponents:
         print(f'write metadata file: {unw_file}.conncomp.xml')
@@ -1283,6 +1285,8 @@ def unwrap_snaphu(int_file, cor_file, unw_file, max_defo=2.0, max_comp=32,
         atr['INTERLEAVE'] = 'BIP'
         atr['BANDS'] = '1'
         writefile.write_isce_xml(atr, f'{unw_file}.conncomp')
+        if os.path.isfile(int_file+'.rsc'):
+            writefile.write_roipac_rsc(atr, unw_file+'.conncomp.rsc', print_msg=True)
 
     # time usage
     m, s = divmod(time.time() - start_time, 60)

@@ -138,6 +138,7 @@ DATA_TYPE_GDAL2NUMPY = {
     12: 'uint64',
     13: 'int64',
     14: 'int8',         # GDAL >= 3.7
+    15: 'float16',      # GDAL >= 3.11
 }
 
 DATA_TYPE_NUMPY2GDAL = {
@@ -155,6 +156,7 @@ DATA_TYPE_NUMPY2GDAL = {
     "uint64"    : 12,   # GDT_UInt64 (GDAL >= 3.5)
     "int64"     : 13,   # GDT_Int64  (GDAL >= 3.5)
     "int8"      : 14,   # GDT_Int8   (GDAL >= 3.7)
+    "float16"   : 15,   # GDT_Float16 (GDAL >= 3.11)
 }
 
 # 3 - ISCE
@@ -257,6 +259,8 @@ def gdal_to_numpy_dtype(gdal_dtype: Union[str, int]) -> np.dtype:
     Returns:    np_dtype   - np.dtype, NumPy dtype
     """
     from osgeo import gdal, gdal_array
+    gdal.UseExceptions()
+
     if isinstance(gdal_dtype, str):
         gdal_dtype = gdal.GetDataTypeByName(gdal_dtype)
     np_dtype = np.dtype(gdal_array.GDALTypeCodeToNumericTypeCode(gdal_dtype))
@@ -353,6 +357,8 @@ def read(fname, box=None, datasetName=None, print_msg=True, xstep=1, ystep=1, da
     length, width = int(atr['LENGTH']), int(atr['WIDTH'])
     if not box:
         box = (0, 0, width, length)
+    elif box[0] < 0 or box[1] < 0 or box[2] > width or box[3] > length:
+        raise ValueError(f'Input box {tuple(box)} is NOT within the data size range (0, 0, {width}, {length})!')
 
     # read data
     kwargs = dict(
@@ -844,6 +850,9 @@ def get_slice_list(fname, no_complex=False):
 
         elif fext in ['.unw', '.ion']:
             slice_list = ['magnitude', 'phase']
+            # gamma unw file has only one band for phase
+            if num_band == 1:
+                slice_list = ['phase']
 
         elif fext in ['.int', '.slc'] or (dtype.startswith('c') and num_band == 1):
             if no_complex:
@@ -1687,10 +1696,8 @@ def read_gdal_vrt(fname):
 
     Modified from $ISCE_HOME/applications/gdal2isce_xml.gdal2isce_xml() written by David Bekaert.
     """
-    try:
-        from osgeo import gdal, osr
-    except ImportError:
-        raise ImportError('Cannot import gdal and osr!')
+    from osgeo import gdal, osr
+    gdal.UseExceptions()
 
     # read dataset using gdal
     # Using os.fspath to convert Path objects to str, recommended by
@@ -1785,9 +1792,11 @@ def read_gmtsar_prm(fname, delimiter='='):
     prmDict = {}
     for line in lines:
         c = [i.strip() for i in line.strip().replace('\t',' ').split(delimiter, 1)]
-        key = c[0]
-        value = c[1].replace('\n', '').strip()
-        prmDict[key] = value
+        # ignore lines with empty key values
+        if len(c) >= 2:
+            key = c[0]
+            value = c[1].replace('\n', '').strip()
+            prmDict[key] = value
 
     prmDict = _attribute_gmtsar2roipac(prmDict)
     prmDict = standardize_metadata(prmDict)
@@ -1835,12 +1844,18 @@ def _attribute_gmtsar2roipac(prm_dict_in):
         prm_dict['RANGE_PIXEL_SIZE'] = SPEED_OF_LIGHT / value / 2.0
 
     # SC_clock_start/stop -> CENTER_LINE_TUC
-    dt_center = (float(prm_dict['SC_clock_start']) + float(prm_dict['SC_clock_stop'])) / 2.0
-    t_center = dt_center - int(dt_center)
-    prm_dict['CENTER_LINE_UTC'] = str(t_center * 24. * 60. * 60.)
+    key = 'SC_clock_start'
+    if key in prm_dict_in.keys():
+        dt_start = float(prm_dict['SC_clock_start'])
+        dt_stop = float(prm_dict['SC_clock_stop'])
+        dt_center = (dt_start + dt_stop) / 2.0
+        t_center = dt_center - int(dt_center)
+        prm_dict['CENTER_LINE_UTC'] = str(t_center * 24. * 60. * 60.)
 
     # SC_identity -> PLATFORM
-    prm_dict['PLATFORM'] = GMTSAR_SENSOR_ID2NAME[int(prm_dict['SC_identity'])]
+    key = 'SC_identity'
+    if key in prm_dict_in.keys():
+        prm_dict['PLATFORM'] = GMTSAR_SENSOR_ID2NAME[int(prm_dict[key])]
 
     return prm_dict
 
@@ -2075,10 +2090,8 @@ def read_gdal(fname, box=None, band=1, cpx_band='phase', xstep=1, ystep=1):
                 x/ystep  : int, number of pixels to pick/multilook for each output pixel
     Returns:    data     : 2D np.array
     """
-    try:
-        from osgeo import gdal
-    except ImportError:
-        raise ImportError('Cannot import gdal!')
+    from osgeo import gdal
+    gdal.UseExceptions()
 
     # open data file
     # Using os.fspath to convert Path objects to str, recommended by

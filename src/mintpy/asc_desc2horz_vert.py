@@ -33,11 +33,14 @@ def get_overlap_lalo(atr_list):
 
 def get_design_matrix4east_north_up(los_inc_angle, los_az_angle, obs_direction=None):
     """Design matrix G to convert multi-track range/azimuth displacement into east/north/up direction.
-    Parameters: los_inc_angle - 1D np.ndarray in size of (num_obs,) in float32, LOS incidence angle in degree
-                los_az_angle  - 1D np.ndarray in size of (num_obs,) in float32, LOS azimuth   angle in degree
+    Parameters: los_inc_angle - float / 1D np.ndarray in size of (num_obs,) in float32, LOS incidence angle in degree
+                los_az_angle  - float / 1D np.ndarray in size of (num_obs,) in float32, LOS azimuth   angle in degree
                 obs_direction - 1D np.ndarray in size of (num_obs,) in str, observation direction: range or azimuth
     Returns:    G             - 2D np.ndarray in size of (num_obs, 3) in float32, design matrix
     """
+    if not isinstance(los_inc_angle, np.ndarray):
+        los_inc_angle = np.array([los_inc_angle])
+        los_az_angle = np.array([los_az_angle])
     num_obs = los_inc_angle.shape[0]
     G = np.zeros((num_obs, 3), dtype=np.float32)
 
@@ -170,7 +173,7 @@ def run_asc_desc2horz_vert(inps):
     lon_step = float(atr_list[0]['X_STEP'])
     length = int(round((S - N) / lat_step))
     width  = int(round((E - W) / lon_step))
-    print(f'overlaping area in SNWE: {(S, N, W, E)}')
+    print(f'overlapping area in SNWE: {(S, N, W, E)}')
 
 
     ## 2. read LOS data and geometry
@@ -201,10 +204,10 @@ def run_asc_desc2horz_vert(inps):
             print(f'read 2D LOS incidence / azimuth angles from file: {inps.geom_file[i]}')
         else:
             los_inc_angle[i] = ut.incidence_angle(atr, dimension=0, print_msg=False)
-            los_az_angle[i] = ut.heading2azimuth_angle(float(atr['HEADING']))
+            los_az_angle[i] = ut.heading2azimuth_angle(float(atr['HEADING']), look_direction='right')
             print('calculate the constant LOS incidence / azimuth angles from metadata as:')
             print(f'LOS incidence angle: {los_inc_angle[i]:.1f} deg')
-            print(f'LOS azimuth   angle: {los_az_angle[i]:.1f} deg')
+            print(f'LOS azimuth   angle: {los_az_angle[i]:.1f} deg, assuming right-looking radar.')
 
 
     ## 3. decompose LOS displacements into horizontal / Vertical displacements

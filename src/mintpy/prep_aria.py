@@ -11,11 +11,9 @@ import time
 
 import h5py
 import numpy as np
+from osgeo import gdal
 
-try:
-    from osgeo import gdal
-except ImportError:
-    raise ImportError('Can not import gdal [version>=3.0]!')
+gdal.UseExceptions()
 
 from mintpy.multilook import multilook_data
 from mintpy.objects import geometry, ifgramStack, sensor
@@ -143,7 +141,7 @@ def extract_metadata(stack):
     meta["FILE_LENGTH"] = ds.RasterYSize
     meta["LENGTH"] = ds.RasterYSize
     meta["ORBIT_DIRECTION"] = meta["orbitDirection"].upper()
-    meta["PLATFORM"] = "Sen"
+    meta["PLATFORM"] = meta.get("PLATFORM", "Sen")              # provided by ARIA-tools since version 1.4.3 on Mar 2026
     meta["WAVELENGTH"] = float(meta["Wavelength (m)"])
     meta["WIDTH"] = ds.RasterXSize
     meta["NUMBER_OF_PAIRS"] = ds.RasterCount
@@ -297,6 +295,10 @@ def write_geometry(outfile, demFile, incAngleFile, azAngleFile=None, waterMaskFi
             # write
             f['waterMask'][:,:] = water_mask
 
+            # apply mask to azimuthAngle after conversion factor
+            if azAngleFile is not None:
+                f['azimuthAngle'][:,:] *= water_mask
+
     print(f'finished writing to HD5 file: {outfile}\n')
     return outfile
 
@@ -370,7 +372,6 @@ def write_ifgram_stack(outfile, stackFiles, box=None, xstep=1, ystep=1, mli_meth
             f["dropIfgram"][ii] = True
 
             # loop through stacks
-            print(stackFiles.keys())
             for dsName in stackFiles.keys():
                 dsStack = gdal.Open(stackFiles[dsName], gdal.GA_ReadOnly)
                 bnd = dsStack.GetRasterBand(bndIdx)
@@ -378,8 +379,6 @@ def write_ifgram_stack(outfile, stackFiles, box=None, xstep=1, ystep=1, mli_meth
                 if xstep * ystep > 1:
                     mli_method_spec = mli_method if dsName not in \
                         ['connCompStack'] else 'nearest'
-                    print(f'apply {xstep} x {ystep} multilooking/downsampling via '
-                          f'{mli_method_spec} to: {dsName}')
                     data = multilook_data(data, ystep, xstep, method=mli_method_spec)
                 data[data == noDataValues[dsName]] = 0  #assign pixel with no-data to 0
 
@@ -458,7 +457,7 @@ def write_timeseries(outfile, corrStack, box=None,
 
     # Get the wavelength. need to convert radians to meters
     wavelength = np.float64(dsCor.GetRasterBand(1).GetMetadata(layer)["Wavelength (m)"])
-    phase2range = -wavelength / (4.*np.pi)
+    phase2range = wavelength / (4.*np.pi)
 
     # get model dates and time
     nDate = dsCor.RasterCount
@@ -654,8 +653,8 @@ def load_aria(inps):
 
         layer_name, _ = get_correction_layer(inps.ionoFile)
 
-        if run_or_skip(inps, ds_name_dict, out_file=inps.outfile[0]) == 'run':
-            outname = f'{out_dir}/ionStack.h5'
+        outname = f'{out_dir}/ionStack.h5'
+        if run_or_skip(inps, ds_name_dict, out_file=outname) == 'run':
 
             writefile.layout_hdf5(
                 outname,

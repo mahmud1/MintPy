@@ -11,14 +11,15 @@ jobs:
     resource_class: large
 
     steps:
-      - checkout
+      - checkout:
+          method: blobless
       - run:
           name: Setting Up Environment with Miniforge
           command: |
             apt update
             apt-get update --yes && apt-get upgrade --yes
             apt-get install --yes git wget
-            # install miniforge
+            # install miniforge (https://github.com/conda-forge/miniforge?tab=readme-ov-file#as-part-of-a-ci-pipeline)
             mkdir -p ${HOME}/tools
             cd ${HOME}/tools
             wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
@@ -27,6 +28,8 @@ jobs:
             source "${HOME}/tools/miniforge/etc/profile.d/mamba.sh"
             # modify/export env var PATH to BASH_ENV to be shared across run steps
             echo 'export PATH=${CONDA_PREFIX}/bin:${PATH}' >> ${BASH_ENV}
+            echo 'export PROJ_LIB=${CONDA_PREFIX}/share/proj' >> ${BASH_ENV}
+            echo 'export GDAL_DATA=${CONDA_PREFIX}/share/gdal' >> ${BASH_ENV}
 
       - run:
           name: Installing MintPy
@@ -34,10 +37,7 @@ jobs:
           command: |
             export PYTHONUNBUFFERED=1
             # install dependencies and source code
-            # pin gdal version as "<=3.8" because:
-            # 1) gdal-3.9 could not read the GMT-6 *.grd file properly
-            # 2) gdal-3.9 could not be imported in circle CI (https://github.com/insarlab/MintPy/issues/1220)
-            mamba install --verbose --yes --file ${MINTPY_HOME}/requirements.txt gdal"<=3.8"
+            mamba install --verbose --yes --file ${MINTPY_HOME}/requirements.txt gdal libgdal-netcdf pytest
             python -m pip install ${MINTPY_HOME}
             # test installation
             smallbaselineApp.py -h
@@ -51,6 +51,7 @@ jobs:
             ${MINTPY_HOME}/tests/objects/ionex.py
             ${MINTPY_HOME}/tests/asc_desc2horz_vert.py
             ${MINTPY_HOME}/tests/dem_error.py
+            pytest ${MINTPY_HOME}/tests/
 
       - run:
           name: Integration Test 1/6 - FernandinaSenDT128 (ISCE2/topsStack)

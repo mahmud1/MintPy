@@ -413,6 +413,13 @@ def get_save_roipac_parser(subparsers=None):
     return parser
 
 
+def get_save_explorer_parser(subparsers=None):
+    from mintpy.cli import save_explorer
+    parser = save_explorer.create_parser(subparsers)
+    parser.set_defaults(func=save_explorer.main)
+    return parser
+
+
 def get_smallbaselineApp_parser(subparsers=None):
     from mintpy.cli import smallbaselineApp
     parser = smallbaselineApp.create_parser(subparsers)
@@ -487,6 +494,13 @@ def get_tropo_gacos_parser(subparsers=None):
     from mintpy.cli import tropo_gacos
     parser = tropo_gacos.create_parser(subparsers)
     parser.set_defaults(func=tropo_gacos.main)
+    return parser
+
+
+def get_tropo_opera_parser(subparsers=None):
+    from mintpy.cli import tropo_opera
+    parser = tropo_opera.create_parser(subparsers)
+    parser.set_defaults(func=tropo_opera.main)
     return parser
 
 
@@ -622,6 +636,7 @@ def get_parser():
     get_s1ab_range_bias_parser(sp)
     get_solid_earth_tides_parser(sp)
     get_tropo_gacos_parser(sp)
+    get_tropo_opera_parser(sp)
     get_tropo_phase_elevation_parser(sp)
     get_tropo_pyaps3_parser(sp)
     get_unwrap_error_bridging_parser(sp)
@@ -660,6 +675,7 @@ def get_parser():
     get_save_kmz_parser(sp)
     get_save_qgis_parser(sp)
     get_save_roipac_parser(sp)
+    get_save_explorer_parser(sp)
 
     # visualization
     get_info_parser(sp)

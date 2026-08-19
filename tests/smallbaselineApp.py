@@ -30,7 +30,7 @@ DSET_INFO = {
         'url':'https://zenodo.org/record/6662079/files/SanFranSenDT42.tar.xz',      # 280 MB
     },
     'RidgecrestSenDT71':{
-        'processor':'ASF HyP3',
+        'processor':'HyP3',
         'url':'https://zenodo.org/record/11049257/files/RidgecrestSenDT71.tar.xz',  # 240 MB
     },
     'SanFranBaySenD42':{
@@ -144,9 +144,12 @@ def test_smallbaselineApp(dset_name, test_dir, fresh_start=True, test_pyaps=Fals
 
         # uncompress tar file
         print(f'extracting content from tar file: {tar_file}')
-        tar = tarfile.open(fileobj=FileProgressObject(tar_file))
-        tar.extractall()
-        tar.close()
+        with tarfile.open(fileobj=FileProgressObject(tar_file)) as tar:
+            # Use 'data' filter if available (Python 3.12+), otherwise fall back
+            if hasattr(tarfile, 'data_filter'):
+                tar.extractall(filter='data')
+            else:
+                tar.extractall()
         print('')
 
     # set working directory
